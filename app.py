@@ -89,8 +89,9 @@ Follow these exact instructions:
 5.Strengths: List and describe all aspects of the resume that align well with the job description.
 6.Weaknesses: List and describe areas where the candidate’s profile does not meet or only partially meets the job requirements.
 Focus on skills, experience, projects, certifications, tools, and achievements that are directly relevant to the role.
-Maintain professional, concise yet detailed, and objective language throughout.
+Maintain professional, detailed, and objective language throughout.
 Your output should only be the evaluation, formatted exactly as described above.
+keep it very very detailed
 """
 
 input_prompt3 = """
@@ -107,6 +108,8 @@ List all critical technical and non-technical keywords, skills, or tools from th
 3. Final Thoughts:
 Summarize the overall suitability of the candidate for the role in a brief, professional statement (2–4 sentences), highlighting alignment level and potential gaps.
 Your output must contain only these three sections in the specified order and format.
+
+keep it very very detailed
 """
 
 input_prompt4 = """
