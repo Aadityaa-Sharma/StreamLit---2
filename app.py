@@ -12,16 +12,71 @@ import google.generativeai as genai
 import html
 import re
 
-# --- CONFIGURATION ---
-# FIX: Consolidated into a single, initial call. This was the cause of the layout switching.
-# I've chosen "centered" as it was your last setting, but you can change it to "wide".
-st.set_page_config(page_title="AI Resume Analyzer", page_icon="🧠", layout="centered")
+
+st.set_page_config(page_title="AI Scanner", page_icon="🤖", layout="wide")
+
+
 
 # Configure Gemini API from the .env file
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# --- PROMPTS ---
-# (Prompts are kept the same as they were well-defined)
+@st.cache_data
+def input_pdf_setup(uploaded_file_bytes):
+    """
+    Converts the uploaded PDF file (as bytes) into an image format that Gemini can process.
+    Works seamlessly on Streamlit Community Cloud without specifying poppler_path.
+    """
+    try:
+        # Streamlit Cloud already includes Poppler in the environment
+        images = pdf2image.convert_from_bytes(uploaded_file_bytes)
+        first_page = images[0]
+
+        img_byte_arr = io.BytesIO()
+        first_page.save(img_byte_arr, format='JPEG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+        pdf_parts = [{
+            "mime_type": "image/jpeg",
+            "data": base64.b64encode(img_byte_arr).decode()
+        }]
+        return pdf_parts
+    except Exception as e:
+        st.error(f"Error processing PDF: {e}. Ensure Poppler is available in the environment.")
+        return None
+
+def get_gemini_response_stream(pdf_content, prompt, user_input):
+    """
+    Calls the Gemini API with streaming enabled.
+    """
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response_stream = model.generate_content([pdf_content[0], prompt, user_input], stream=True)
+    for chunk in response_stream:
+        if hasattr(chunk, 'text'):
+            yield chunk.text
+
+# --- REDESIGNED STREAMLIT UI ---
+
+# Use CSS to remove extra padding at the top and clean up the UI
+st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .stButton>button {
+            font-weight: 600;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🧠 AI-Powered ATS Resume Analyzer")
+st.write("Get an instant, AI-driven analysis of your resume against any job description.")
+
+# Store analysis result in session state
+if 'optimized_resume_text' not in st.session_state:
+    st.session_state.optimized_resume_text = ""
+
+# Prompts
 
 input_prompt1 = """
 You are an experienced Human Resources Manager with a strong technical background in roles such as Data Science, Full Stack Development, Web Development, Big Data Engineering, DevOps, or Data Analysis.
@@ -36,7 +91,6 @@ Follow these exact instructions:
 Focus on skills, experience, projects, certifications, tools, and achievements that are directly relevant to the role.
 Maintain professional, concise yet detailed, and objective language throughout.
 Your output should only be the evaluation, formatted exactly as described above.
-Explain in an detailed manner, dont be concise
 """
 
 input_prompt3 = """
@@ -53,7 +107,6 @@ List all critical technical and non-technical keywords, skills, or tools from th
 3. Final Thoughts:
 Summarize the overall suitability of the candidate for the role in a brief, professional statement (2–4 sentences), highlighting alignment level and potential gaps.
 Your output must contain only these three sections in the specified order and format.
-Explain in an detailed manner, dont be concise
 """
 
 input_prompt4 = """
@@ -98,142 +151,88 @@ Inputs for you:
 
 Your output should be a fully optimized, tailored, single-page resume that would stand out for this job posting.
 """
-
-# --- HELPER FUNCTIONS ---
-# FIX: Grouped helper functions together for better code organization.
-
-@st.cache_data # Using cache to prevent reprocessing the same PDF
-def get_pdf_image_parts(uploaded_file_bytes):
-    """
-    Converts the uploaded PDF file bytes into an image format for Gemini.
-    """
-    try:
-        images = pdf2image.convert_from_bytes(uploaded_file_bytes)
-        first_page = images[0]
-
-        img_byte_arr = io.BytesIO()
-        first_page.save(img_byte_arr, format='JPEG')
-        img_byte_arr = img_byte_arr.getvalue()
-
-        pdf_parts = [{
-            "mime_type": "image/jpeg",
-            "data": base64.b64encode(img_byte_arr).decode()
-        }]
-        return pdf_parts
-    except Exception as e:
-        st.error(f"Error processing PDF: {e}. Please ensure poppler is installed and configured in your environment.")
-        return None
-
-def get_gemini_response_stream(pdf_content, prompt, user_input):
-    """
-    Generates content from the Gemini API using a streaming response.
-    """
-    model = genai.GenerativeModel("gemini-2.0-flash") # "gemini-pro-vision" is the correct model for image input
-    response_stream = model.generate_content([pdf_content[0], prompt, user_input], stream=True)
-    for chunk in response_stream:
-        # Check if text attribute exists and is not empty
-        if hasattr(chunk, 'text') and chunk.text:
-            yield chunk.text
-
-def generate_pdf_from_text(text_content):
-    """
-    Creates a downloadable PDF from a string of text.
-    """
-    pdf = FPDF()
-    pdf.add_page()
-    # Add a font that supports a wider range of characters, including common symbols
-    pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
-    pdf.set_font('DejaVu', '', 10)
-    
-    # Clean the text to remove markdown and unwanted phrases
-    cleaned_text = html.unescape(text_content)
-    cleaned_text = re.sub(r'[\*`#]', '', cleaned_text) # Remove markdown characters
-    lines = [line for line in cleaned_text.split('\n') if "note:" not in line.lower() and "here's a revised" not in line.lower()]
-    final_text = '\n'.join(lines)
-    
-    pdf.multi_cell(0, 5, final_text)
-    
-    # Return the PDF content as bytes
-    return bytes(pdf.output(dest='S'))
-
-
-# --- STREAMLIT UI ---
-
-# Use CSS for a cleaner interface
-st.markdown("""
-    <style>
-        .block-container {padding-top: 2rem; padding-bottom: 2rem;}
-        .stButton>button {font-weight: 600;}
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("🧠 AI-Powered ATS Resume Analyzer")
-st.write("Get an instant, AI-driven analysis of your resume against any job description.")
-
-# Store analysis result in session state to persist it across reruns
-if 'optimized_resume_text' not in st.session_state:
-    st.session_state.optimized_resume_text = ""
-
+       
 # --- Main UI Container ---
 with st.container(border=True):
     uploaded_file = st.file_uploader("1. Upload Your Resume (PDF only)", type=["pdf"])
-    input_text = st.text_area("2. Paste the Job Description Here", height=150)
+    
+    # **FIX:** Reduced the height of the text area
+    input_text = st.text_area("2. Paste the Job Description Here", height=70)
 
-    st.divider()
-    st.write("3. Choose an Analysis:")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    # Buttons are enabled only when both inputs are provided
-    inputs_ready = uploaded_file is not None and input_text
-    
-    with col1:
-        submit1 = st.button("📋 Evaluation", use_container_width=True, disabled=not inputs_ready)
-    with col2:
-        submit3 = st.button("📊 Match %", use_container_width=True, disabled=not inputs_ready)
-    with col3:
-        submit4 = st.button("📝 Optimize", use_container_width=True, disabled=not inputs_ready)
-
+    # **FIX:** Buttons are now inside the main container and appear only when ready
+    if uploaded_file is not None and input_text:
+        st.divider()
+        st.write("3. Choose an Analysis:")
+        
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        with col_btn1:
+            submit1 = st.button("📋 Evaluation", use_container_width=True)
+        with col_btn2:
+            submit3 = st.button("📊 Match %", use_container_width=True)
+        with col_btn3:
+            submit4 = st.button("📝 Optimize", use_container_width=True)
+    else:
+        # Keep placeholder buttons to prevent layout shifts
+        st.divider()
+        st.write("3. Choose an Analysis:")
+        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        with col_btn1:
+            st.button("📋 Evaluation", use_container_width=True, disabled=True)
+        with col_btn2:
+            st.button("📊 Match %", use_container_width=True, disabled=True)
+        with col_btn3:
+            st.button("📝 Optimize", use_container_width=True, disabled=True)
 
 # --- Results Section ---
-if inputs_ready and (submit1 or submit3 or submit4):
-    with st.spinner("Analyzing... This may take a moment. 🤖"):
-        pdf_content = get_pdf_image_parts(uploaded_file.getvalue())
+if 'submit1' in st.session_state and st.session_state.submit1:
+    # This logic block structure ensures that when a button is clicked,
+    # it stays active through the rerun, allowing the code inside to execute.
+    # This check is conceptual for Streamlit's button behavior.
+    # In practice, we check the button state directly after it's defined.
+    pass # Placeholder for conceptual clarity
 
-        if pdf_content:
-            st.markdown("---")
-            st.header("Analysis Result")
-            response_container = st.container(border=True)
+if (uploaded_file is not None and input_text) and (submit1 or submit3 or submit4):
+    with st.spinner("Processing your resume..."):
+        pdf_content = input_pdf_setup(uploaded_file.getvalue())
+
+    if pdf_content:
+        st.markdown("---")
+        st.header("Analysis Result")
+        response_container = st.container(border=True)
+        
+        with response_container:
+            if submit1:
+                st.subheader("🔎 Professional Evaluation")
+                st.write_stream(get_gemini_response_stream(pdf_content, input_prompt1, input_text))
             
-            with response_container:
-                if submit1:
-                    st.subheader("🔎 Professional Evaluation")
-                    st.write_stream(get_gemini_response_stream(pdf_content, input_prompt1, input_text))
-                
-                elif submit3:
-                    st.subheader("📊 Percentage Match Analysis")
-                    st.write_stream(get_gemini_response_stream(pdf_content, input_prompt3, input_text))
+            elif submit3:
+                st.subheader("📊 Percentage Match Analysis")
+                st.write_stream(get_gemini_response_stream(pdf_content, input_prompt3, input_text))
 
-                elif submit4:
-                    st.subheader("📝 Optimized Resume")
+            elif submit4:
+                st.subheader("📝 Optimized Resume")
+                st.session_state.optimized_resume_text = st.write_stream(get_gemini_response_stream(pdf_content, input_prompt4, input_text))
+                
+                if st.session_state.optimized_resume_text:
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+                    pdf.set_font('DejaVu', '', 10)
                     
-                    # FIX: Correctly capture the full text from the stream for the PDF download.
-                    # st.write_stream returns None. We must build the string from the generator.
-                    full_response = ""
-                    placeholder = st.empty()
-                    for chunk in get_gemini_response_stream(pdf_content, input_prompt4, input_text):
-                        full_response += chunk
-                        placeholder.markdown(full_response) # Display the streaming text
+                    cleaned_text = html.unescape(st.session_state.optimized_resume_text)
+                    cleaned_text = re.sub(r'[\*`#]', '', cleaned_text)
+                    lines = cleaned_text.split('\n')
+                    lines = [line for line in lines if "note:" not in line.lower() and "here's a revised" not in line.lower()]
+                    cleaned_text = '\n'.join(lines)
                     
-                    st.session_state.optimized_resume_text = full_response
+                    pdf.multi_cell(0, 5, cleaned_text)
                     
-                    if st.session_state.optimized_resume_text:
-                        pdf_bytes = generate_pdf_from_text(st.session_state.optimized_resume_text)
-                        
-                        st.download_button(
-                            label="📥 Download Optimized Resume as PDF",
-                            data=pdf_bytes,
-                            file_name="optimized_resume.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
+                    pdf_bytes = bytes(pdf.output(dest='S'))
+
+                    st.download_button(
+                        label="📥 Download Optimized Resume as PDF",
+                        data=pdf_bytes,
+                        file_name="optimized_resume.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
