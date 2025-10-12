@@ -23,12 +23,11 @@ genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 def input_pdf_setup(uploaded_file_bytes):
     """
     Converts the uploaded PDF file (as bytes) into an image format that Gemini can process.
+    Works seamlessly on Streamlit Community Cloud without specifying poppler_path.
     """
     try:
-        images = pdf2image.convert_from_bytes(
-            uploaded_file_bytes,
-            poppler_path="/usr/bin"
-        )
+        # Streamlit Cloud already includes Poppler in the environment
+        images = pdf2image.convert_from_bytes(uploaded_file_bytes)
         first_page = images[0]
 
         img_byte_arr = io.BytesIO()
@@ -41,7 +40,7 @@ def input_pdf_setup(uploaded_file_bytes):
         }]
         return pdf_parts
     except Exception as e:
-        st.error(f"Error processing PDF: {e}. Ensure Poppler is installed and the path is correct.")
+        st.error(f"Error processing PDF: {e}. Ensure Poppler is available in the environment.")
         return None
 
 def get_gemini_response_stream(pdf_content, prompt, user_input):
