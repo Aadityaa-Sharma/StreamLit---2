@@ -128,7 +128,7 @@ def get_gemini_response_stream(pdf_content, prompt, user_input):
     """
     Generates content from the Gemini API using a streaming response.
     """
-    model = genai.GenerativeModel("gemini-pro-vision") # "gemini-pro-vision" is the correct model for image input
+    model = genai.GenerativeModel("gemini-2.0-flash") # "gemini-pro-vision" is the correct model for image input
     response_stream = model.generate_content([pdf_content[0], prompt, user_input], stream=True)
     for chunk in response_stream:
         # Check if text attribute exists and is not empty
