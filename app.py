@@ -51,7 +51,7 @@ def get_gemini_response_stream(pdf_content, prompt, user_input):
                 yield chunk.text
 
     except Exception:
-        yield "⚠️ Gemini quota exceeded. Please retry later."
+        yield "⚠️ Gemini quota exceededdddddd. Please retry later."
 
 # ---------------- UI STYLES ----------------
 st.markdown("""
